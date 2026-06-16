@@ -1,0 +1,52 @@
+# Python caches and virtual envs
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Notebook artifacts
+.ipynb_checkpoints/
+notebooks/*_ran.ipynb
+
+# Generated pipeline artifacts
+data/raw/
+data/processed/
+data/outputs/
+data/Sindhupalchowk_Dataset_Landslide/
+data/tifData/
+
+# Heavy geospatial artifacts (kept out of git)
+data/**/*.tif
+data/**/*.tiff
+data/**/*.img
+data/**/*.jp2
+data/**/*.vrt
+data/**/*.shp
+data/**/*.shx
+data/**/*.dbf
+data/**/*.cpg
+data/**/*.prj
+data/**/*.geojson
+data/**/*.gpkg
+
+# Trained model artifacts
+models/*.pkl
+models/*.joblib
+models/*.onnx
+models/*.h5
+models/*.pt
+models/*.pth
+
+# Large compressed dataset drops
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.gz
+
+# Local environment files
+.env
+.env.*
