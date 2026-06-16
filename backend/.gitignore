@@ -11,11 +11,13 @@ __pycache__/
 .ipynb_checkpoints/
 notebooks/*_ran.ipynb
 
+.data 
+
 # Generated pipeline artifacts
 data/raw/
 data/processed/
 data/outputs/
-data/Sindhupalchowk_Dataset_Landslide/
+data/Raw_Sindhupalchowk_Dataset_Landslide/
 data/tifData/
 
 # Heavy geospatial artifacts (kept out of git)
