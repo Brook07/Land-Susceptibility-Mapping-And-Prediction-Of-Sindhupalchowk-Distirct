@@ -145,6 +145,73 @@ def extract_raster_values(points_gdf, raster_dict):
                 
     return df
 
+def load_rainfall_time_series(rainfall_path):
+    """Load rainfall time series from CSV/XLSX and prepare month-day climatology."""
+    suffix = rainfall_path.suffix.lower()
+    if suffix == '.csv':
+        rainfall_df = pd.read_csv(rainfall_path)
+    elif suffix in ['.xlsx', '.xls']:
+        rainfall_df = pd.read_excel(rainfall_path)
+    else:
+        raise ValueError("Rainfall file must be CSV/XLSX for temporal rainfall mode.")
+
+    date_candidates = [c for c in rainfall_df.columns if 'date' in c.lower()]
+    rain_candidates = [c for c in rainfall_df.columns if 'rain' in c.lower()]
+
+    date_col = date_candidates[0] if date_candidates else None
+    rain_col = rain_candidates[0] if rain_candidates else None
+    if date_col is None or rain_col is None:
+        raise ValueError("Rainfall table must have date and rainfall columns.")
+
+    rainfall_df = rainfall_df[[date_col, rain_col]].copy()
+    rainfall_df.columns = ['date', 'rainfall']
+    rainfall_df['date'] = pd.to_datetime(rainfall_df['date'], errors='coerce')
+    rainfall_df['rainfall'] = pd.to_numeric(rainfall_df['rainfall'], errors='coerce')
+    rainfall_df = rainfall_df.dropna(subset=['date', 'rainfall'])
+
+    rainfall_df['month'] = rainfall_df['date'].dt.month
+    rainfall_df['day'] = rainfall_df['date'].dt.day
+    climatology = rainfall_df.groupby(['month', 'day'])['rainfall'].mean()
+    default_value = float(rainfall_df['rainfall'].median())
+    return climatology, default_value
+
+def assign_rainfall_from_event_dates(event_dates, climatology, default_value):
+    """Assign rainfall using month-day climatology from event dates."""
+    values = []
+    for dt in pd.to_datetime(event_dates, errors='coerce'):
+        if pd.isna(dt):
+            values.append(default_value)
+        else:
+            values.append(float(climatology.get((dt.month, dt.day), default_value)))
+    return np.array(values, dtype=np.float32)
+
+def parse_inventory_date(value):
+    """Parse mixed inventory date formats like 5/3/015, 12/04/014, 3/8/04."""
+    if pd.isna(value):
+        return pd.NaT
+
+    text = str(value).strip()
+    parts = text.split('/')
+    if len(parts) == 3:
+        m, d, y = parts
+        m = m.zfill(2)
+        d = d.zfill(2)
+        y = y.strip()
+
+        if y.isdigit():
+            if len(y) == 3:
+                y = f"2{y}"
+            elif len(y) == 2:
+                y_int = int(y)
+                y = f"20{y}" if y_int <= 30 else f"19{y}"
+
+        normalized = f"{m}/{d}/{y}"
+        parsed = pd.to_datetime(normalized, format='%m/%d/%Y', errors='coerce')
+        if not pd.isna(parsed):
+            return parsed
+
+    return pd.to_datetime(text, errors='coerce')
+
 # %% [markdown]
 # ## 1. Identify Raw Files
 
@@ -206,12 +273,20 @@ if rivers_raw:
 # ## 4. Handle Rainfall Data
 
 # %%
-rainfall_raw = find_file(DATA_DIR / "Rainfall", ['.tif'])
+rainfall_mode = None
+rainfall_climatology = None
+rainfall_default_value = None
+rainfall_raw = find_file(DATA_DIR / "Rainfall", ['.csv', '.xlsx', '.xls', '.tif', '.tiff'])
 if rainfall_raw:
-    rain_aligned = aligned_dir / "rainfall.tif"
-    aligned_rasters['rainfall'] = align_and_reproject_raster(rainfall_raw, rain_aligned, ref_raster=dem_aligned)
+    if rainfall_raw.suffix.lower() in ['.tif', '.tiff']:
+        rain_aligned = aligned_dir / "rainfall.tif"
+        aligned_rasters['rainfall'] = align_and_reproject_raster(rainfall_raw, rain_aligned, ref_raster=dem_aligned)
+        rainfall_mode = 'spatial_raster'
+    else:
+        rainfall_climatology, rainfall_default_value = load_rainfall_time_series(rainfall_raw)
+        rainfall_mode = 'temporal_timeseries'
 else:
-    print("No rainfall raster found. Skipping rainfall feature for spatial extraction.")
+    print("No rainfall file found. Skipping rainfall feature.")
 
 # %% [markdown]
 # ## 5. Load Positive Inventory & 6. Generate Negative Inventory
@@ -221,11 +296,25 @@ if inventory_raw.suffix == '.csv':
     df_inv = pd.read_csv(inventory_raw)
     lon_col = next((c for c in df_inv.columns if 'lon' in c.lower()), 'longitude')
     lat_col = next((c for c in df_inv.columns if 'lat' in c.lower()), 'latitude')
+    date_candidates = [c for c in df_inv.columns if 'date' in c.lower()]
+    if 'Name' in df_inv.columns:
+        date_candidates = ['Name'] + date_candidates
+    date_col = date_candidates[0] if date_candidates else None
     
     geometry = [Point(xy) for xy in zip(df_inv[lon_col], df_inv[lat_col])]
     pos_gdf = gpd.GeoDataFrame(df_inv, geometry=geometry, crs="EPSG:4326")
+    if date_col is not None:
+        pos_gdf['event_date'] = pos_gdf[date_col].apply(parse_inventory_date)
+    else:
+        pos_gdf['event_date'] = pd.NaT
 else:
     pos_gdf = gpd.read_file(inventory_raw)
+    if 'event_date' in pos_gdf.columns:
+        pos_gdf['event_date'] = pd.to_datetime(pos_gdf['event_date'], errors='coerce')
+    elif 'Name' in pos_gdf.columns:
+        pos_gdf['event_date'] = pos_gdf['Name'].apply(parse_inventory_date)
+    else:
+        pos_gdf['event_date'] = pd.NaT
     
 pos_gdf = pos_gdf.to_crs(TARGET_CRS)
 pos_gdf['target'] = 1
@@ -235,13 +324,30 @@ pos_gdf = gpd.clip(pos_gdf, boundary)
 
 neg_gdf = generate_negative_samples(boundary_raw, len(pos_gdf), pos_gdf)
 
-all_points = pd.concat([pos_gdf[['geometry', 'target']], neg_gdf[['geometry', 'target']]], ignore_index=True)
+pos_valid_dates = pos_gdf['event_date'].dropna()
+if len(pos_valid_dates) > 0:
+    neg_gdf['event_date'] = np.random.choice(pos_valid_dates.to_numpy(), size=len(neg_gdf), replace=True)
+else:
+    neg_gdf['event_date'] = pd.NaT
+
+all_points = pd.concat([pos_gdf[['geometry', 'target', 'event_date']], neg_gdf[['geometry', 'target', 'event_date']]], ignore_index=True)
 
 # %% [markdown]
 # ## 7. Extract Features & 8. Data Cleaning
 
 # %%
 dataset_df = extract_raster_values(all_points, aligned_rasters)
+
+if rainfall_mode == 'temporal_timeseries':
+    dataset_df['rainfall'] = assign_rainfall_from_event_dates(
+        all_points['event_date'],
+        rainfall_climatology,
+        rainfall_default_value
+    )
+elif rainfall_mode == 'spatial_raster':
+    pass
+else:
+    dataset_df['rainfall'] = np.nan
 
 print("Cleaning data and imputing missing values...")
 X = dataset_df.drop(columns=['latitude', 'longitude', 'target'])
@@ -260,3 +366,5 @@ final_df.to_csv(out_csv, index=False)
 print(f"✅ Success! ML-ready dataset saved to: {out_csv}")
 print(f"Dataset shape: {final_df.shape}")
 print(f"Class balance:\n{final_df['target'].value_counts()}")
+if 'rainfall' in final_df.columns:
+    print(f"Rainfall unique values: {final_df['rainfall'].nunique()}")
