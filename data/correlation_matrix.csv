@@ -1,0 +1,10 @@
+,DEM,Slope,Aspect,LULC,NDVI,Rainfall,RiverProximity,RoadProximity,TWI
+DEM,,,,,,,,,
+Slope,,,,,,,,,
+Aspect,,,,,,,,,
+LULC,,,,,,,,,
+NDVI,,,,,,,,,
+Rainfall,,,,,,,,,
+RiverProximity,,,,,,,1.0,0.9851468882802902,
+RoadProximity,,,,,,,0.9851468882802902,1.0,
+TWI,,,,,,,,,

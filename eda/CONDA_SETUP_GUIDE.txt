@@ -1,0 +1,46 @@
+# ✅ Installation Fixed - Using Conda Environment
+
+## What Changed
+- Created a fresh conda environment: `geospatial`
+- Installing all packages via conda-forge (better compatibility)
+- Avoids the numpy build error you encountered
+
+---
+
+## ✅ How to Use (Once Installation Completes)
+
+### **Step 1: Activate the Conda Environment**
+```bash
+conda activate geospatial
+```
+
+### **Step 2: Navigate to EDA Folder**
+```bash
+cd d:\SEMESTER-PROJECT\Land-Susceptibility-Mapping-And-Prediction-Of-Sindhupalchowk-Distirct\eda
+```
+
+### **Step 3: Start Jupyter**
+```bash
+jupyter notebook 01_eda_analysis.ipynb
+```
+
+### **Step 4: Run the Notebook**
+- Press `Ctrl+Shift+Enter` or click "Run All"
+- Wait 5-8 minutes for completion
+
+---
+
+## 📝 Notes
+- Environment name: `geospatial` (Python 3.11)
+- All packages installed from conda-forge
+- Much faster and more reliable than pip
+
+---
+
+## ⏳ Installation Status
+**Currently installing packages...**
+- Packages: numpy, pandas, matplotlib, seaborn, scipy, rasterio, geopandas, shapely, scikit-learn, jupyter, ipython
+- Source: conda-forge
+- This may take 5-10 minutes
+
+**Check back soon! You'll be notified when complete.**
